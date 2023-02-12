@@ -7,11 +7,8 @@ use crate::constants::{CAM_ROT_SPEED, CAM_SPEED, FAR_CLIP, FOV, HEIGHT, NEAR_CLI
 
 pub struct Camera {
     position: cgmath::Point3<f32>,
-    //target: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
     up: cgmath::Vector3<f32>,
-
-    horizontal_angle: f32,
-
     pub aspect: f32,
 
     pub uniform: CameraUniform,
@@ -22,7 +19,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(device: &wgpu::Device) -> Self {
         let position = cgmath::Point3::new(0.0, 0.0, 2.0);
-        //let target = cgmath::Point3::new(0.0, 0.0, -1.0);
+        let target = cgmath::Point3::new(0.0, 0.0, -1.0);
         let up = cgmath::Vector3::new(0.0, 1.0, 0.0);
         let aspect = WIDTH as f32 / HEIGHT as f32;
 
@@ -62,9 +59,8 @@ impl Camera {
 
         Self {
             position,
-            //target,
+            target,
             up,
-            horizontal_angle: 0.0,
             aspect: WIDTH as f32 / HEIGHT as f32,
             uniform: camera_uniform,
             buffer,
