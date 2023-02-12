@@ -1,7 +1,9 @@
 use wgpu::{FragmentState, VertexState};
 use crate::camera::create_camera_bind_group_layout;
 use crate::graphics_context::GraphicsContext;
+use crate::light::create_light_bind_group_layout;
 use crate::model::{ModelVertex, Vertex};
+use crate::model_matrix::{ModelMatrix, RawModelMatrix};
 use crate::texture::{create_texture_bind_group_layout};
 pub struct SimplePipeline {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -17,6 +19,7 @@ impl SimplePipeline {
         let layouts = &[
             &create_texture_bind_group_layout(device),
             &create_camera_bind_group_layout(device),
+            &create_light_bind_group_layout(device),
         ];
 
         let layout = device.create_pipeline_layout(
@@ -38,7 +41,7 @@ impl SimplePipeline {
                 vertex: VertexState {
                     module: &shader,
                     entry_point: "vs_main",
-                    buffers: &[ModelVertex::desc()],
+                    buffers: &[ModelVertex::desc(), RawModelMatrix::desc()],
                 },
                 fragment: Some(FragmentState {
                     module: &shader,

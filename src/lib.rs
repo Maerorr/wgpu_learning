@@ -5,7 +5,10 @@ mod vertex;
 mod camera;
 mod constants;
 mod model;
+mod light;
+mod model_matrix;
 
+use cgmath::{Quaternion, Rotation3, Vector3};
 use wgpu::{FragmentState, include_wgsl, VertexState};
 use winit::{
     event::*,
@@ -16,7 +19,9 @@ use winit::window::Window;
 use crate::camera::{Camera, CameraController};
 use crate::constants::{HEIGHT, WIDTH};
 use crate::graphics_context::GraphicsContext;
+use crate::light::{create_light_pipeline, DrawLight, Light};
 use crate::model::{DrawModel, load_model, Model};
+use crate::model_matrix::ModelMatrix;
 use crate::simple_pipeline::SimplePipeline;
 use crate::vertex::Vertex;
 use crate::texture::{load_texture, Texture};
@@ -34,6 +39,12 @@ struct State {
     camera_controller: CameraController,
 
     obj_model: Model,
+    model: ModelMatrix,
+
+    light_model: Model,
+
+    light: Light,
+    light_pipeline: wgpu::RenderPipeline,
 }
 
 impl State {
@@ -64,6 +75,25 @@ impl State {
                 .await
                 .unwrap();
 
+        let pos = Vector3::new(0.0, 0.0, 0.0);
+        let rot = Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Deg(180.0));
+
+        let model_matrix = ModelMatrix::new(&context.device, pos, rot);
+
+        let light_model = load_model("models\\d20\\", "d20.obj", &context.device, &context.queue, texture.get_layout())
+                .await
+                .unwrap();
+
+        let light = Light::new(
+            &context.device,
+            Vector3::new(5.0, 0.0, 0.0),
+            Vector3::new(0.4, 0.8, 0.6));
+
+        let light_pipeline = create_light_pipeline(
+            &context.device,
+            &context.config,
+        );
+
         Self {
             ctx: context,
             pipeline,
@@ -73,6 +103,10 @@ impl State {
             camera,
             camera_controller,
             obj_model,
+            model: model_matrix,
+            light_model,
+            light,
+            light_pipeline,
         }
     }
 
@@ -107,6 +141,24 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera.uniform]),
         );
+        let pos: Vector3<_> = self.light.uniform.position.into();
+        self.light.uniform.position = (cgmath::Quaternion::from_axis_angle(
+            cgmath::Vector3::unit_y(),
+            cgmath::Deg(1.0)
+        ) * pos).into();
+
+        self.ctx.queue.write_buffer(
+            &self.light.buffer,
+            0,
+            bytemuck::cast_slice(&[self.light.uniform]),
+        );
+
+        self.model.rotation = self.model.rotation * Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Deg(0.2));
+        self.ctx.queue.write_buffer(
+            &self.model.buffer,
+            0,
+            bytemuck::cast_slice(&[self.model.to_raw()]),
+        );
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -130,8 +182,8 @@ impl State {
                             ops: wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(
                                     wgpu::Color {
-                                        r: 0.6,
-                                        g: 0.2,
+                                        r: 0.1,
+                                        g: 0.5,
                                         b: 0.9,
                                         a: 1.0,
                                     }
@@ -156,15 +208,21 @@ impl State {
             );
 
             // all rendering things come here:
-            render_pass.set_pipeline(&self.pipeline.render_pipeline);
-            //render_pass.set_bind_group(0, self.texture.get_bind_group(), &[]);
-            //camera bind group
-            //render_pass.set_bind_group(1, &self.camera.bind_group, &[]);
 
-            // render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            // render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            // render_pass.draw_indexed(0..Vertex::index_len(), 0,0..1);
-            render_pass.draw_model(&self.obj_model, &self.camera.bind_group);
+
+            render_pass.set_pipeline(&self.light_pipeline);
+            render_pass.draw_light_model(
+                &self.light_model,
+                &self.camera.bind_group,
+                &self.light.bind_group,
+            );
+
+            render_pass.set_pipeline(&self.pipeline.render_pipeline);
+            render_pass.set_vertex_buffer(1, self.model.buffer.slice(..));
+            render_pass.draw_model(
+                &self.obj_model,
+                &self.camera.bind_group,
+            &self.light.bind_group);
 
         }
         self.ctx.queue.submit(std::iter::once(encoder.finish()));
