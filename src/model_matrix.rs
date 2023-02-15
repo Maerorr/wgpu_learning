@@ -1,4 +1,4 @@
-use cgmath::{Matrix3, Matrix4, Quaternion, Rad, Rotation3, SquareMatrix, Vector3};
+use cgmath::{Matrix, Matrix3, Matrix4, Quaternion, Rad, Rotation3, SquareMatrix, Vector3, Zero};
 use wgpu::util::DeviceExt;
 use wgpu::VertexBufferLayout;
 use crate::model::{ModelVertex, Vertex};
@@ -11,14 +11,17 @@ pub struct RawModelMatrix {
 }
 
 impl RawModelMatrix {
-    pub fn new(position: Vector3<f32>, rotation: Quaternion<f32>) -> Self {
-        let model =
-            Matrix4::from_translation(position) *
-            Matrix4::from(rotation);
-        let normal = Matrix3::from(rotation);
+    pub fn new(transform: Matrix4<f32>) -> Self {
+        let model: [[f32; 4]; 4] = transform.into();
+
+        let normal_matrix = mat4_to_mat3(transform);
+        let normal_matrix = normal_matrix.transpose();
+        let normal_matrix= normal_matrix.invert().unwrap();
+
+        let normal = normal_matrix;
 
         Self {
-            model: model.into(),
+            model: model,
             normal: normal.into(),
         }
     }
@@ -52,14 +55,15 @@ impl Vertex for RawModelMatrix {
 }
 
 pub struct ModelMatrix {
-    pub position: Vector3<f32>,
-    pub rotation: Quaternion<f32>,
+    pub local: Matrix4<f32>,
+    pub world: Matrix4<f32>,
     pub buffer: wgpu::Buffer,
 }
 
 impl ModelMatrix {
-    pub fn new(device: &wgpu::Device, position: Vector3<f32>, rotation: Quaternion<f32>) -> Self {
-        let raw_matrix = RawModelMatrix::new(position, rotation);
+    pub fn new(device: &wgpu::Device, local_transform: Matrix4<f32>, world_transform: Matrix4<f32>) -> Self {
+
+        let raw_matrix = RawModelMatrix::new(local_transform * world_transform);
         let data = [raw_matrix];
         let buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -68,13 +72,91 @@ impl ModelMatrix {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         Self {
-            position,
-            rotation,
+            local: local_transform,
+            world: world_transform,
             buffer,
         }
     }
 
-    pub fn to_raw(&self) -> RawModelMatrix {
-        RawModelMatrix::new(self.position, self.rotation)
+    pub fn identity(device: &wgpu::Device) -> Self {
+        let local = Matrix4::identity();
+        let world = Matrix4::identity();
+        let raw_matrix = RawModelMatrix::new(local*world);
+        let data = [raw_matrix];
+        let buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("model matrix Buffer"),
+                contents: bytemuck::cast_slice(&data),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        Self {
+            local,
+            world,
+            buffer,
+        }
     }
+
+    pub fn translate_local(
+        &mut self,
+        position: [f32; 3],
+    ) {
+        self.local.x.w += position[0];
+        self.local.y.w += position[1];
+        self.local.z.w += position[2];
+    }
+
+    pub fn translate_world(
+        &mut self,
+        position: [f32; 3],
+    ) {
+        self.world.x.w += position[0];
+        self.world.y.w += position[1];
+        self.world.z.w += position[2];
+    }
+
+    pub fn scale_local(
+        &mut self,
+        scale: [f32; 3],
+    ) {
+        self.local.x.x *= scale[0];
+        self.local.y.y *= scale[1];
+        self.local.z.z *= scale[2];
+    }
+
+    pub fn scale_world(
+        &mut self,
+        scale: [f32; 3],
+    ) {
+        self.world.x.x *= scale[0];
+        self.world.y.y *= scale[1];
+        self.world.z.z *= scale[2];
+    }
+
+    pub fn rotate_world(
+        &mut self,
+        rotation: Quaternion<f32>,
+    ) {
+        let rotation_matrix = Matrix4::from(rotation);
+        self.world = self.world * rotation_matrix;
+    }
+
+    pub fn rotate_local(
+        &mut self,
+        rotation: Quaternion<f32>,
+    ) {
+        let rotation_matrix = Matrix4::from(rotation);
+        self.local = self.local * rotation_matrix;
+    }
+
+    pub fn to_raw(&self) -> RawModelMatrix {
+        RawModelMatrix::new(self.world * self.local)
+    }
+}
+
+pub fn mat4_to_mat3(mat: Matrix4<f32>) -> Matrix3<f32> {
+    Matrix3::new(
+        mat.x.x, mat.x.y, mat.x.z,
+        mat.y.x, mat.y.y, mat.y.z,
+        mat.z.x, mat.z.y, mat.z.z,
+    )
 }

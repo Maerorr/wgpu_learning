@@ -1,6 +1,8 @@
 use std::io::{BufReader, Cursor};
 use std::ops::Range;
+use cgmath::{Matrix4, Quaternion};
 use wgpu::util::DeviceExt;
+use crate::model_matrix::ModelMatrix;
 use crate::texture;
 use crate::texture::{load_texture, load_texture_model};
 
@@ -60,6 +62,7 @@ pub struct Mesh {
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
+    pub model_matrix: ModelMatrix,
 }
 
 pub fn load_string(
@@ -165,8 +168,52 @@ pub async fn load_model(
         })
         .collect::<Vec<_>>();
 
-    Ok(Model { meshes, materials })
+    Ok(Model { meshes, materials, model_matrix: ModelMatrix::identity(device) })
 }
+impl Model {
+    pub fn translate_local(
+        &mut self,
+        position: [f32; 3],
+    ) {
+        self.model_matrix.translate_local(position);
+    }
+
+    pub fn translate_world(
+        &mut self,
+        position: [f32; 3],
+    ) {
+        self.model_matrix.translate_world(position);
+    }
+
+    pub fn scale_local(
+        &mut self,
+        scale: [f32; 3],
+    ) {
+        self.model_matrix.scale_local(scale);
+    }
+
+    pub fn scale_world(
+        &mut self,
+        scale: [f32; 3],
+    ) {
+        self.model_matrix.scale_world(scale);
+    }
+
+    pub fn rotate_world(
+        &mut self,
+        rotation: Quaternion<f32>,
+    ) {
+        self.model_matrix.rotate_world(rotation);
+    }
+
+    pub fn rotate_local(
+        &mut self,
+        rotation: Quaternion<f32>,
+    ) {
+        self.model_matrix.rotate_local(rotation);
+    }
+}
+
 
 pub trait DrawModel<'a> {
     fn draw_mesh(

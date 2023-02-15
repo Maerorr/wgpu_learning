@@ -7,6 +7,7 @@ mod constants;
 mod model;
 mod light;
 mod model_matrix;
+mod Node;
 
 use cgmath::{Quaternion, Rotation3, Vector3};
 use wgpu::{FragmentState, include_wgsl, VertexState};
@@ -39,7 +40,6 @@ struct State {
     camera_controller: CameraController,
 
     obj_model: Model,
-    model: ModelMatrix,
 
     light_model: Model,
 
@@ -75,11 +75,6 @@ impl State {
                 .await
                 .unwrap();
 
-        let pos = Vector3::new(0.0, 0.0, 0.0);
-        let rot = Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Deg(180.0));
-
-        let model_matrix = ModelMatrix::new(&context.device, pos, rot);
-
         let light_model = load_model("models\\d20\\", "d20.obj", &context.device, &context.queue, texture.get_layout())
                 .await
                 .unwrap();
@@ -103,7 +98,6 @@ impl State {
             camera,
             camera_controller,
             obj_model,
-            model: model_matrix,
             light_model,
             light,
             light_pipeline,
@@ -153,11 +147,12 @@ impl State {
             bytemuck::cast_slice(&[self.light.uniform]),
         );
 
-        self.model.rotation = self.model.rotation * Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Deg(0.2));
+        let rotation = Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Deg(0.2));
+        self.obj_model.rotate_world(rotation);
         self.ctx.queue.write_buffer(
-            &self.model.buffer,
+            &self.obj_model.model_matrix.buffer,
             0,
-            bytemuck::cast_slice(&[self.model.to_raw()]),
+            bytemuck::cast_slice(&[self.obj_model.model_matrix.to_raw()]),
         );
     }
 
@@ -218,7 +213,7 @@ impl State {
             );
 
             render_pass.set_pipeline(&self.pipeline.render_pipeline);
-            render_pass.set_vertex_buffer(1, self.model.buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.obj_model.model_matrix.buffer.slice(..));
             render_pass.draw_model(
                 &self.obj_model,
                 &self.camera.bind_group,
